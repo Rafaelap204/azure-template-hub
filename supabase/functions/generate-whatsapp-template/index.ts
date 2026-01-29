@@ -200,81 +200,165 @@ serve(async (req) => {
     console.log("[generate-whatsapp-template] Generating template for:", title);
 
     const utilityDocSummary = `
-Regras essenciais de Utility Templates (WhatsApp Business):
-- Finalidade: resposta a ação do usuário (confirmação/atualização/alerta operacional). Evitar marketing.
-- Componentes: 1 header (opcional), 1 body (obrigatório), 1 footer (opcional), até 10 botões (opcional).
-- Body: máximo 1024 caracteres. Footer: máximo 60 caracteres.
-- Botões suportados: call_request, copy_code, phone_number, quick_reply, url.
-- Conteúdo com marketing pode ser reclassificado automaticamente como "marketing".
+## DIRETRIZES OFICIAIS - WhatsApp Business UTILITY Templates
+
+### O que é um template UTILITY (Utilitário)?
+Templates de UTILITY são mensagens transacionais que respondem a uma AÇÃO ou SOLICITAÇÃO específica do usuário. Eles fornecem informações sobre uma transação em andamento, conta ou atividade do cliente.
+
+### Exemplos VÁLIDOS de UTILITY:
+- Confirmações de pedido/reserva/agendamento
+- Atualizações de status de entrega/envio
+- Recibos e confirmações de pagamento
+- Lembretes de compromissos/vencimentos
+- Alertas de conta (senha, segurança, atividade)
+- Atualizações de atendimento/suporte
+
+### O que NÃO é UTILITY (será reclassificado como MARKETING):
+- Promoções, ofertas ou descontos
+- Convites para eventos sem solicitação prévia
+- Recomendações de produtos
+- Conteúdo com linguagem persuasiva/vendas
+- Newsletters ou atualizações gerais
+
+### Palavras PROIBIDAS em UTILITY (evitar absolutamente):
+oferta, promoção, desconto, imperdível, exclusivo, aproveite, não perca, grátis, brinde, especial, limitado, última chance, oportunidade, confira, novidade, lançamento
+
+### Regras de Estrutura:
+- HEADER: opcional, máx 60 chars (TEXT) ou mídia (IMAGE/VIDEO/DOCUMENT)
+- BODY: obrigatório, máx 1024 chars, tom direto e informativo
+- FOOTER: opcional, máx 60 chars (ex: identificação da empresa)
+- BUTTONS: máx 10, cada texto máx 25 chars
+
+### Placeholders:
+Use {{nome_variavel}} em lowercase com underscores. Ex: {{nome}}, {{numero_pedido}}, {{data_vencimento}}, {{valor}}, {{status}}
 `.trim();
 
     const inspirationExamples = `
-Exemplos de estilo (inspire-se sem copiar):
-1)
-[Confirme seu Interesse]
-Olá Felipe! Tenho uma atualização para você sobre seu acesso ao Treinamento capacitação profissional – Setor Imobiliário
-Está disponível a Mentoria Imobiliária – Reforma Tributária Sem Complicar, com abordagem prática sobre a aplicação do novo modelo tributário (CBS e IBS) nas operações com bens imóveis.
-📅 30/01/2026 (sexta-feira)
-⏰ 13h30 às 17h30
-📍 Modalidade híbrida – Presencial em Belo Horizonte/MG + on-line ao vivo
-👩‍🏫 Instrutora: Professora Andréa Lacerda
-Botão: Quero Confirmar
+## EXEMPLOS APROVADOS DE TEMPLATES UTILITY
 
-2)
-[Confirmação de Pedido]
-Olá {{nome}}! Seu pedido #{{pedido}} foi confirmado.
-Previsão de entrega: {{data}}.
-Botões: Acompanhar pedido | Falar com suporte
+### 1. Confirmação de Pedido
+Header: Pedido Confirmado ✓
+Body:
+Olá {{nome}}!
 
-3)
-[Aviso de Pagamento]
-Olá {{nome}}! Identificamos que sua fatura vence em {{data_vencimento}} no valor de {{valor}}.
-Botões: Ver boleto | Preciso de ajuda
+Seu pedido #{{numero_pedido}} foi confirmado com sucesso.
+
+📦 Itens: {{quantidade}} produto(s)
+💰 Total: R$ {{valor_total}}
+📅 Previsão de entrega: {{data_entrega}}
+
+Acompanhe o status pelo botão abaixo.
+Footer: {{nome_empresa}}
+Buttons: [Acompanhar Pedido] [Falar com Suporte]
+
+### 2. Lembrete de Pagamento
+Header: Lembrete de Vencimento
+Body:
+{{nome}}, sua fatura está próxima do vencimento.
+
+📄 Fatura: #{{numero_fatura}}
+💵 Valor: R$ {{valor}}
+📅 Vencimento: {{data_vencimento}}
+
+Efetue o pagamento até a data para evitar encargos.
+Footer: Central de Atendimento
+Buttons: [Ver Boleto] [Já Paguei] [Preciso de Ajuda]
+
+### 3. Atualização de Entrega
+Header: Atualização do Pedido
+Body:
+Olá {{nome}}!
+
+Seu pedido #{{numero_pedido}} está em trânsito.
+
+🚚 Status: {{status_entrega}}
+📍 Última localização: {{localizacao}}
+📅 Previsão: {{data_prevista}}
+
+Rastreie em tempo real pelo link abaixo.
+Footer: Logística {{empresa}}
+Buttons: [Rastrear Pedido]
+
+### 4. Confirmação de Agendamento
+Header: Agendamento Confirmado
+Body:
+{{nome}}, seu agendamento foi confirmado!
+
+📅 Data: {{data}}
+⏰ Horário: {{horario}}
+📍 Local: {{endereco}}
+👨‍⚕️ Profissional: {{nome_profissional}}
+
+Caso precise reagendar, entre em contato.
+Footer: {{nome_empresa}}
+Buttons: [Confirmar Presença] [Reagendar]
+
+### 5. Alerta de Segurança
+Header: Alerta de Segurança
+Body:
+{{nome}}, detectamos uma atividade em sua conta.
+
+🔐 Tipo: {{tipo_atividade}}
+📅 Data/Hora: {{data_hora}}
+📍 Dispositivo: {{dispositivo}}
+
+Se não foi você, proteja sua conta imediatamente.
+Footer: Equipe de Segurança
+Buttons: [Fui Eu] [Proteger Conta]
 `.trim();
 
     const systemPrompt = `
-Você é um especialista em WhatsApp Business Templates, focado em UTILITY templates. Sua tarefa é gerar um template utilitário completo e compatível.
+Você é um especialista em criar templates de WhatsApp Business da categoria UTILITY (Utilitários). Sua tarefa é gerar templates que serão APROVADOS pelo WhatsApp/Meta.
 
 ${utilityDocSummary}
 
-Saída OBRIGATÓRIA: responda somente com JSON válido (sem markdown, sem texto extra).
-O JSON DEVE obedecer exatamente este shape:
+${inspirationExamples}
+
+## INSTRUÇÕES DE GERAÇÃO
+
+Você DEVE retornar APENAS um JSON válido (sem markdown, sem explicações, sem texto antes ou depois).
+
+### Schema obrigatório do JSON:
 {
-  "whatsapp_template_name": "string_slug_lowercase_underscore",
-  "broadcast_name_suggestion": "string",
+  "whatsapp_template_name": "string (slug em lowercase_underscore, máx 512 chars)",
+  "broadcast_name_suggestion": "string (nome amigável para o disparo)",
   "category": "utility",
   "message_type": "cobranca|vendas",
   "language": "pt_BR",
-  "header": { "format": "NONE|TEXT|IMAGE|VIDEO|DOCUMENT|LOCATION", "text": "string_opcional_quando_TEXT" },
-  "body": { "text": "string" },
-  "footer": { "text": "string_opcional" },
+  "header": { 
+    "format": "NONE|TEXT|IMAGE|VIDEO|DOCUMENT|LOCATION", 
+    "text": "string (só se format=TEXT, máx 60 chars)" 
+  },
+  "body": { "text": "string (obrigatório, máx 1024 chars)" },
+  "footer": { "text": "string (opcional, máx 60 chars)" },
   "buttons": [
-    { "type": "quick_reply", "text": "string" },
+    { "type": "quick_reply", "text": "string (máx 25 chars)" },
     { "type": "url", "text": "string", "url": "https://..." },
     { "type": "phone_number", "text": "string", "phone_number": "+55..." },
     { "type": "copy_code", "text": "string" },
     { "type": "call_request", "text": "string" }
   ],
-  "notes": ["string_opcional"]
+  "notes": ["observações opcionais"]
 }
 
-Restrições:
-- body.text é obrigatório e deve ter no máximo 1024 caracteres.
-- footer.text, se existir, deve ter no máximo 60 caracteres.
-- header.text só pode existir se header.format = "TEXT" e deve ser curto (máx. 60).
-- buttons: no máximo 10 itens; cada button.text deve ter no máximo 25 caracteres.
-- O conteúdo deve ser UTILITÁRIO (transacional/operacional). Evite linguagem de marketing, promessa, exagero, urgência artificial, promoção.
-- Use placeholders no formato {{param_nome}} quando fizer sentido, com nomes em lowercase e underscores.
+### Regras CRÍTICAS:
+1. O template DEVE ser genuinamente UTILITÁRIO - resposta a uma ação/transação do usuário
+2. NUNCA use palavras de marketing: oferta, promoção, desconto, imperdível, exclusivo, aproveite, grátis
+3. Tom: profissional, direto, informativo, sem exageros ou urgência artificial
+4. Inclua placeholders relevantes: {{nome}}, {{numero_pedido}}, {{data}}, {{valor}}, etc.
+5. Body deve ter informações estruturadas com emojis informativos (📦📅💰) quando apropriado
+6. Botões devem ser ações práticas relacionadas à transação (Acompanhar, Ver, Confirmar)
+7. Se message_type="cobranca": foco em faturas, pagamentos, vencimentos
+8. Se message_type="vendas": foco em pedidos, entregas, status de compras
 
-Passo a passo de construção (faça internamente, mas só retorne o JSON):
-1) Interpretar o objetivo e contexto do usuário e o tipo (cobranca ou vendas).
-2) Definir se haverá header (TEXT) com uma frase curta e objetiva, ou NONE.
-3) Escrever body com informações essenciais, clareza, tom profissional e direto, com quebras de linha.
-4) (Opcional) footer com instrução curta ou identificação.
-5) Definir botões úteis (quick_reply/url/phone_number/copy_code/call_request) alinhados ao objetivo, sem exceder limites.
-6) Gerar whatsapp_template_name como slug em lowercase_underscore e broadcast_name_suggestion como nome amigável.
-
-${inspirationExamples}
+### Processo interno (não incluir na resposta):
+1. Analisar o objetivo do usuário
+2. Identificar qual tipo de transação/ação está sendo comunicada
+3. Estruturar header informativo (se aplicável)
+4. Escrever body com dados da transação de forma clara
+5. Adicionar footer com identificação (opcional)
+6. Criar botões de ação relevantes
+7. Gerar nome do template como slug e nome amigável
 `.trim();
 
     const userPrompt = `
@@ -297,7 +381,7 @@ Dados do pedido:
         "X-Title": "AgenteCTU WhatsApp Template Generator",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
+        model: "openai/gpt-oss-120b:free",
         temperature: 0.6,
         max_tokens: 900,
         messages: [
