@@ -1,50 +1,92 @@
 
 
-# Plano: Corrigir Edge Function para usar OpenRouter
+# Plano: Usar Modelo Gratuito e Melhorar Prompt da Edge Function
 
-## Resumo do Problema
+## Resumo
 
-A Edge Function `generate-whatsapp-template` foi alterada anteriormente para usar o **Lovable AI Gateway** (`google/gemini-2.5-flash` + `LOVABLE_API_KEY`). Você quer que ela use o **OpenRouter** com a chave `OPENROUTER_API_KEY` que você já configurou.
+Vou atualizar a Edge Function `generate-whatsapp-template` para:
+1. Usar o modelo **`openai/gpt-oss-120b:free`** do OpenRouter (gratuito)
+2. Melhorar significativamente o prompt para gerar templates de **UTILITY** (utilitários) seguindo as diretrizes oficiais do WhatsApp Business
 
 ## O que será alterado
 
 ### Arquivo: `supabase/functions/generate-whatsapp-template/index.ts`
 
-A Edge Function será revertida para usar o OpenRouter:
+#### 1. Trocar o modelo
+```
+De: "openai/gpt-4o-mini"
+Para: "openai/gpt-oss-120b:free"
+```
 
-1. **Trocar a URL da API de IA**
-   - De: `https://ai.gateway.lovable.dev/v1/chat/completions`
-   - Para: `https://openrouter.ai/api/v1/chat/completions`
+#### 2. Melhorar o Prompt do Sistema
 
-2. **Trocar a chave de API**
-   - De: `LOVABLE_API_KEY`
-   - Para: `OPENROUTER_API_KEY`
+O prompt será reescrito para seguir as diretrizes oficiais do WhatsApp Business para templates de categoria UTILITY:
 
-3. **Ajustar o modelo usado**
-   - Usar um modelo compatível com OpenRouter (ex: `openai/gpt-4o-mini` ou `google/gemini-2.5-flash`)
-   - O OpenRouter suporta vários modelos, incluindo os mesmos do Lovable AI Gateway
+**Regras principais de Utility Templates (conforme documentacao Meta/WhatsApp):**
+- Templates de UTILITY sao para acompanhamento de acoes ou solicitacoes do usuario
+- Devem referenciar uma conta, transacao ou atividade especifica (ex: ID do pedido, numero de reserva)
+- NAO podem conter conteudo promocional ou de marketing
+- Exemplos validos: confirmacoes de pedido, atualizacoes de envio, recibos de pagamento, lembretes de compromisso, alertas de servico
 
-4. **Adicionar headers obrigatórios do OpenRouter**
-   - O OpenRouter requer headers adicionais como `HTTP-Referer` e `X-Title` para identificar a aplicação
+**Novo prompt ira incluir:**
+- Documentacao clara sobre o que e e o que NAO e um template UTILITY
+- Exemplos reais de templates aprovados pelo WhatsApp
+- Instrucoes para evitar linguagem de marketing (palavras como "oferta", "promocao", "desconto", "imperdivel")
+- Diretrizes sobre uso correto de placeholders (`{{1}}`, `{{nome}}`, etc.)
+- Estrutura clara de componentes: header, body, footer, buttons
+- Limites de caracteres (body: 1024, footer: 60, button text: 25)
+- Tom profissional, direto e transacional
 
-## Detalhes Tecnnicos
+#### 3. Melhorar Exemplos de Inspiracao
 
-A Edge Function continuará funcionando da mesma forma:
-- Health check via `GET ?health=1`
-- Autenticação via JWT do Supabase
-- Validação e sanitização do output da IA
-- Mesma estrutura de resposta `GeneratedTemplate`
+Adicionar exemplos reais de templates UTILITY aprovados:
 
-A única diferenca será o provedor de IA (OpenRouter ao invés de Lovable AI).
+```
+Confirmacao de Pedido:
+Ola {{nome}}! Seu pedido #{{numero_pedido}} foi confirmado.
+Previsao de entrega: {{data_entrega}}.
+Acompanhe pelo link abaixo.
+[Botao: Acompanhar Pedido]
 
-### Secrets Necessários
+Lembrete de Pagamento:
+{{nome}}, sua fatura no valor de R$ {{valor}} vence em {{data_vencimento}}.
+Evite juros efetuando o pagamento ate a data.
+[Botao: Ver Boleto] [Botao: Ja Paguei]
 
-O secret `OPENROUTER_API_KEY` já está configurado no projeto, então não será necessário adicionar nenhum novo secret.
+Atualizacao de Servico:
+Ola {{nome}}! Seu atendimento #{{protocolo}} foi atualizado.
+Status atual: {{status}}.
+Previsao de conclusao: {{prazo}}.
+[Botao: Ver Detalhes]
+```
 
-## Resultado Esperado
+## Detalhes Tecnicos
 
-Após a implementação:
-1. A Edge Function usará o OpenRouter para gerar templates
-2. A integração com o seu Supabase permanece inalterada
-3. O frontend continuará funcionando normalmente sem alterações
+### Alteracoes no codigo
+
+**Linha 300 (modelo):**
+```typescript
+// De:
+model: "openai/gpt-4o-mini",
+
+// Para:
+model: "openai/gpt-oss-120b:free",
+```
+
+**Linhas 202-278 (prompts):**
+O `utilityDocSummary`, `inspirationExamples` e `systemPrompt` serao reescritos com:
+
+1. **Documentacao oficial do WhatsApp** sobre templates UTILITY
+2. **Regras de categorizacao** para evitar reclassificacao automatica como marketing
+3. **Exemplos aprovados** de diferentes tipos (cobranca, confirmacao, alerta)
+4. **Instrucoes claras** sobre tom, estrutura e limites
+5. **Lista de palavras a evitar** (promocao, oferta, desconto, imperdivel, etc.)
+
+### Resultado esperado
+
+Apos a implementacao:
+- A funcao usara um modelo gratuito do OpenRouter
+- Os templates gerados serao genuinamente UTILITARIOS
+- Maior chance de aprovacao pelo WhatsApp/Meta
+- Templates com tom profissional e transacional
 
