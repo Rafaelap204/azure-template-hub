@@ -145,19 +145,19 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
 
     console.log("[generate-whatsapp-template] Checking env vars...");
     console.log("[generate-whatsapp-template] SUPABASE_URL:", SUPABASE_URL ? "set" : "missing");
     console.log("[generate-whatsapp-template] SUPABASE_ANON_KEY:", SUPABASE_ANON_KEY ? "set" : "missing");
-    console.log("[generate-whatsapp-template] LOVABLE_API_KEY:", LOVABLE_API_KEY ? "set" : "missing");
+    console.log("[generate-whatsapp-template] OPENROUTER_API_KEY:", OPENROUTER_API_KEY ? "set" : "missing");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       return jsonResponse(500, { error: "Supabase env vars ausentes." });
     }
 
-    if (!LOVABLE_API_KEY) {
-      return jsonResponse(500, { error: "Secret LOVABLE_API_KEY não configurada." });
+    if (!OPENROUTER_API_KEY) {
+      return jsonResponse(500, { error: "Secret OPENROUTER_API_KEY não configurada." });
     }
 
     const authHeader = req.headers.get("authorization") ?? "";
@@ -286,16 +286,18 @@ Dados do pedido:
 - prompt do usuário: ${prompt}
 `.trim();
 
-    console.log("[generate-whatsapp-template] Calling Lovable AI...");
+    console.log("[generate-whatsapp-template] Calling OpenRouter AI...");
 
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://agentectu.lovable.app",
+        "X-Title": "AgenteCTU WhatsApp Template Generator",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "openai/gpt-4o-mini",
         temperature: 0.6,
         max_tokens: 900,
         messages: [
@@ -307,8 +309,8 @@ Dados do pedido:
 
     if (!aiResponse.ok) {
       const errText = await aiResponse.text().catch(() => "");
-      console.log("[generate-whatsapp-template] AI error:", aiResponse.status, errText);
-      return jsonResponse(502, { error: "Falha ao chamar Lovable AI.", details: errText.slice(0, 1500) });
+      console.log("[generate-whatsapp-template] OpenRouter error:", aiResponse.status, errText);
+      return jsonResponse(502, { error: "Falha ao chamar OpenRouter AI.", details: errText.slice(0, 1500) });
     }
 
     type AIChatCompletion = {
@@ -322,7 +324,7 @@ Dados do pedido:
     console.log("[generate-whatsapp-template] AI response content length:", content.length);
 
     if (!content) {
-      return jsonResponse(502, { error: "Lovable AI retornou resposta vazia." });
+      return jsonResponse(502, { error: "OpenRouter AI retornou resposta vazia." });
     }
 
     const rawJson = pickJsonFromText(content);
