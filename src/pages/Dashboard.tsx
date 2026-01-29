@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import type { Database } from '@/integrations/supabase/types';
 import { Button } from '@/components/ui/button';
 import { GlassCard } from '@/components/GlassCard';
 import { Logo } from '@/components/Logo';
@@ -11,10 +10,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Plus, 
@@ -38,31 +35,15 @@ interface Template {
   updated_at: string;
 }
 
-type AppSettingsRow = Database['public']['Tables']['app_settings']['Row'];
-
-const appSettingsTable = 'app_settings' satisfies keyof Database['public']['Tables'];
-
-const isMissingAppSettingsTable = (message?: string | null) => {
-  const normalized = message?.toLowerCase() ?? '';
-  return normalized.includes('app_settings') && normalized.includes('schema cache');
-};
-
 export default function Dashboard() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [templateDialogMode, setTemplateDialogMode] = useState<'select' | 'generate'>('select');
-  const [publicAccessEnabled, setPublicAccessEnabled] = useState(false);
-  const [publicAccessLoading, setPublicAccessLoading] = useState(false);
-  const [publicAccessUpdating, setPublicAccessUpdating] = useState(false);
-  const [appSettingsId, setAppSettingsId] = useState<string | null>(null);
-  const [publicAccessLoadError, setPublicAccessLoadError] = useState<string | null>(null);
   
   const { user, signOut, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-
-  const isAdmin = (user?.email ?? '').toLowerCase() === 'admgestalt@gmail.com';
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -75,88 +56,6 @@ export default function Dashboard() {
       fetchTemplates();
     }
   }, [user]);
-
-  useEffect(() => {
-    if (!user || !isAdmin) return;
-
-    const fetchPublicAccess = async () => {
-      setPublicAccessLoading(true);
-      setPublicAccessLoadError(null);
-
-      const primary = await supabase
-        .from(appSettingsTable)
-        .select('*')
-        .eq('singleton', true)
-        .maybeSingle();
-
-      if (!primary.error && primary.data) {
-        setAppSettingsId(primary.data.id);
-        setPublicAccessEnabled(Boolean(primary.data.public_access_enabled));
-        setPublicAccessLoading(false);
-        return;
-      }
-
-      if (isMissingAppSettingsTable(primary.error?.message)) {
-        setPublicAccessLoadError('Configurações indisponíveis no banco.');
-        setPublicAccessLoading(false);
-        return;
-      }
-
-      const fallback = await supabase
-        .from(appSettingsTable)
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-
-      if (!fallback.error && fallback.data) {
-        setAppSettingsId(fallback.data.id);
-        setPublicAccessEnabled(Boolean(fallback.data.public_access_enabled));
-        setPublicAccessLoading(false);
-        return;
-      }
-
-      if (isMissingAppSettingsTable(fallback.error?.message)) {
-        setPublicAccessLoadError('Configurações indisponíveis no banco.');
-        setPublicAccessLoading(false);
-        return;
-      }
-
-      const creation = await supabase
-        .from(appSettingsTable)
-        .insert({
-          public_access_enabled: false,
-          singleton: true,
-        })
-        .select('*')
-        .maybeSingle();
-
-      if (!creation.error && creation.data) {
-        const created = creation.data as AppSettingsRow;
-        setAppSettingsId(created.id);
-        setPublicAccessEnabled(Boolean(created.public_access_enabled));
-        setPublicAccessLoading(false);
-        return;
-      }
-
-      if (isMissingAppSettingsTable(creation.error?.message)) {
-        setPublicAccessLoadError('Configurações indisponíveis no banco.');
-        setPublicAccessLoading(false);
-        return;
-      }
-
-      const message = (primary.error ?? fallback.error ?? creation.error)?.message ?? 'Não foi possível carregar.';
-      setPublicAccessLoadError(message);
-      toast({
-        title: 'Erro ao carregar configurações',
-        description: message,
-        variant: 'destructive',
-      });
-
-      setPublicAccessLoading(false);
-    };
-
-    fetchPublicAccess();
-  }, [user, isAdmin]);
 
   const fetchTemplates = async () => {
     setLoading(true);
@@ -185,45 +84,6 @@ export default function Dashboard() {
   const handleSignOut = async () => {
     await signOut();
     navigate('/auth');
-  };
-
-  const handleTogglePublicAccess = async (nextValue: boolean) => {
-    if (!appSettingsId) {
-      toast({
-        title: 'Configuração indisponível',
-        description: 'Não foi possível identificar o registro de configurações no banco.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setPublicAccessEnabled(nextValue);
-    setPublicAccessUpdating(true);
-
-    const { error } = await supabase
-      .from(appSettingsTable)
-      .update({ public_access_enabled: nextValue })
-      .eq('id', appSettingsId);
-
-    setPublicAccessUpdating(false);
-
-    if (error) {
-      setPublicAccessEnabled(!nextValue);
-      if (isMissingAppSettingsTable(error.message)) {
-        setPublicAccessLoadError('Configurações indisponíveis no banco.');
-      }
-      toast({
-        title: 'Não foi possível atualizar',
-        description: error.message,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    toast({
-      title: nextValue ? 'Acesso público ativado' : 'Acesso público desativado',
-      description: nextValue ? 'Templates ficam visíveis sem login.' : 'Templates voltam a exigir login.',
-    });
   };
 
   const handleCreateFromScratch = () => {
@@ -271,32 +131,6 @@ export default function Dashboard() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              {isAdmin && (
-                <>
-                  <DropdownMenuItem
-                    onSelect={(e) => e.preventDefault()}
-                    className="cursor-default justify-between gap-3"
-                    disabled={publicAccessLoading || publicAccessUpdating}
-                  >
-                    <div className="flex flex-col">
-                      <span>Acesso público</span>
-                      <span className="text-xs text-muted-foreground">
-                        {publicAccessLoadError
-                          ? 'Indisponível'
-                          : publicAccessEnabled
-                            ? 'Ativado'
-                            : 'Desativado'}
-                      </span>
-                    </div>
-                    <Switch
-                      checked={publicAccessEnabled}
-                      onCheckedChange={handleTogglePublicAccess}
-                      disabled={publicAccessLoading || publicAccessUpdating || Boolean(publicAccessLoadError)}
-                    />
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
               <DropdownMenuItem onClick={handleSignOut} className="text-destructive cursor-pointer">
                 <LogOut className="h-4 w-4 mr-2" />
                 Sair
@@ -392,7 +226,6 @@ export default function Dashboard() {
         )}
       </main>
 
-      {/* Template Selection Dialog */}
       <TemplateSelectionDialog
         open={showTemplateDialog}
         onOpenChange={setShowTemplateDialog}
