@@ -1,46 +1,50 @@
 
-# Plano: Corrigir Conexão com Edge Function de Geração de Templates
+
+# Plano: Corrigir Edge Function para usar OpenRouter
 
 ## Resumo do Problema
 
-A geração de templates WhatsApp está falhando porque:
-1. A Edge Function `generate-whatsapp-template` não está deployada
-2. O secret `OPENROUTER_API_KEY` não está configurado
+A Edge Function `generate-whatsapp-template` foi alterada anteriormente para usar o **Lovable AI Gateway** (`google/gemini-2.5-flash` + `LOVABLE_API_KEY`). Você quer que ela use o **OpenRouter** com a chave `OPENROUTER_API_KEY` que você já configurou.
 
-## Passos para Correção
+## O que será alterado
 
-### Passo 1: Configurar o Secret OPENROUTER_API_KEY
+### Arquivo: `supabase/functions/generate-whatsapp-template/index.ts`
 
-A Edge Function depende da API do OpenRouter para gerar os templates usando IA. Você precisará:
+A Edge Function será revertida para usar o OpenRouter:
 
-1. Obter uma API key do OpenRouter (em https://openrouter.ai)
-2. Adicionar o secret `OPENROUTER_API_KEY` no projeto
+1. **Trocar a URL da API de IA**
+   - De: `https://ai.gateway.lovable.dev/v1/chat/completions`
+   - Para: `https://openrouter.ai/api/v1/chat/completions`
 
-Usarei a ferramenta de adicionar secrets para solicitar que você insira a chave.
+2. **Trocar a chave de API**
+   - De: `LOVABLE_API_KEY`
+   - Para: `OPENROUTER_API_KEY`
 
-### Passo 2: Fazer Deploy da Edge Function
+3. **Ajustar o modelo usado**
+   - Usar um modelo compatível com OpenRouter (ex: `openai/gpt-4o-mini` ou `google/gemini-2.5-flash`)
+   - O OpenRouter suporta vários modelos, incluindo os mesmos do Lovable AI Gateway
 
-A função existe no código em `supabase/functions/generate-whatsapp-template/index.ts` mas precisa ser deployada. Farei o deploy da função automaticamente.
+4. **Adicionar headers obrigatórios do OpenRouter**
+   - O OpenRouter requer headers adicionais como `HTTP-Referer` e `X-Title` para identificar a aplicação
 
-### Passo 3: Verificar Funcionamento
+## Detalhes Tecnnicos
 
-Após o deploy e configuração do secret:
-- Testarei a Edge Function com uma chamada de health check
-- Verificarei se a autenticação está funcionando corretamente
-- Confirmarei que a geração de templates está operacional
+A Edge Function continuará funcionando da mesma forma:
+- Health check via `GET ?health=1`
+- Autenticação via JWT do Supabase
+- Validação e sanitização do output da IA
+- Mesma estrutura de resposta `GeneratedTemplate`
 
-## Detalhes Técnicos
+A única diferenca será o provedor de IA (OpenRouter ao invés de Lovable AI).
 
-A Edge Function atual já tem:
-- CORS configurado corretamente
-- Health check endpoint (`GET ?health=1`)
-- Validação de autenticação via JWT
-- Verificação de permissão por email
-- Integração com OpenRouter para geração via IA
-- Validação e sanitização do output
+### Secrets Necessários
 
-A configuração em `supabase/config.toml` com `verify_jwt = false` está correta para o padrão Lovable Cloud (validação manual no código).
+O secret `OPENROUTER_API_KEY` já está configurado no projeto, então não será necessário adicionar nenhum novo secret.
 
-## Observação Importante
+## Resultado Esperado
 
-A Edge Function atualmente só permite acesso para o email `admgestalt@gmail.com`. Se você precisar permitir outros usuários, será necessário ajustar a lógica de permissão na função.
+Após a implementação:
+1. A Edge Function usará o OpenRouter para gerar templates
+2. A integração com o seu Supabase permanece inalterada
+3. O frontend continuará funcionando normalmente sem alterações
+
