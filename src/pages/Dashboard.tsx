@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
 import { Button } from '@/components/ui/button';
 import { GlassCard } from '@/components/GlassCard';
 import { Logo } from '@/components/Logo';
@@ -10,8 +11,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/hooks/use-toast';
 import { 
   Plus, 
   Copy, 
@@ -34,13 +38,31 @@ interface Template {
   updated_at: string;
 }
 
+type AppSettingsRow = Database['public']['Tables']['app_settings']['Row'];
+
+const appSettingsTable = 'app_settings' satisfies keyof Database['public']['Tables'];
+
+const isMissingAppSettingsTable = (message?: string | null) => {
+  const normalized = message?.toLowerCase() ?? '';
+  return normalized.includes('app_settings') && normalized.includes('schema cache');
+};
+
 export default function Dashboard() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [templateDialogMode, setTemplateDialogMode] = useState<'select' | 'generate'>('select');
+  const [publicAccessEnabled, setPublicAccessEnabled] = useState(false);
+  const [publicAccessLoading, setPublicAccessLoading] = useState(false);
+  const [publicAccessUpdating, setPublicAccessUpdating] = useState(false);
+  const [appSettingsId, setAppSettingsId] = useState<string | null>(null);
+  const [publicAccessLoadError, setPublicAccessLoadError] = useState<string | null>(null);
   
   const { user, signOut, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const isAdmin = (user?.email ?? '').toLowerCase() === 'admgestalt@gmail.com';
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -54,6 +76,88 @@ export default function Dashboard() {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+
+    const fetchPublicAccess = async () => {
+      setPublicAccessLoading(true);
+      setPublicAccessLoadError(null);
+
+      const primary = await supabase
+        .from(appSettingsTable)
+        .select('*')
+        .eq('singleton', true)
+        .maybeSingle();
+
+      if (!primary.error && primary.data) {
+        setAppSettingsId(primary.data.id);
+        setPublicAccessEnabled(Boolean(primary.data.public_access_enabled));
+        setPublicAccessLoading(false);
+        return;
+      }
+
+      if (isMissingAppSettingsTable(primary.error?.message)) {
+        setPublicAccessLoadError('Configurações indisponíveis no banco.');
+        setPublicAccessLoading(false);
+        return;
+      }
+
+      const fallback = await supabase
+        .from(appSettingsTable)
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+
+      if (!fallback.error && fallback.data) {
+        setAppSettingsId(fallback.data.id);
+        setPublicAccessEnabled(Boolean(fallback.data.public_access_enabled));
+        setPublicAccessLoading(false);
+        return;
+      }
+
+      if (isMissingAppSettingsTable(fallback.error?.message)) {
+        setPublicAccessLoadError('Configurações indisponíveis no banco.');
+        setPublicAccessLoading(false);
+        return;
+      }
+
+      const creation = await supabase
+        .from(appSettingsTable)
+        .insert({
+          public_access_enabled: false,
+          singleton: true,
+        })
+        .select('*')
+        .maybeSingle();
+
+      if (!creation.error && creation.data) {
+        const created = creation.data as AppSettingsRow;
+        setAppSettingsId(created.id);
+        setPublicAccessEnabled(Boolean(created.public_access_enabled));
+        setPublicAccessLoading(false);
+        return;
+      }
+
+      if (isMissingAppSettingsTable(creation.error?.message)) {
+        setPublicAccessLoadError('Configurações indisponíveis no banco.');
+        setPublicAccessLoading(false);
+        return;
+      }
+
+      const message = (primary.error ?? fallback.error ?? creation.error)?.message ?? 'Não foi possível carregar.';
+      setPublicAccessLoadError(message);
+      toast({
+        title: 'Erro ao carregar configurações',
+        description: message,
+        variant: 'destructive',
+      });
+
+      setPublicAccessLoading(false);
+    };
+
+    fetchPublicAccess();
+  }, [user, isAdmin]);
+
   const fetchTemplates = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -61,7 +165,18 @@ export default function Dashboard() {
       .select('*')
       .order('updated_at', { ascending: false });
 
-    if (!error && data) {
+    if (error) {
+      toast({
+        title: error.code === '42501' ? 'Sem permissão para ler templates' : 'Erro ao carregar templates',
+        description: error.message,
+        variant: 'destructive',
+      });
+      setTemplates([]);
+      setLoading(false);
+      return;
+    }
+
+    if (data) {
       setTemplates(data);
     }
     setLoading(false);
@@ -72,11 +187,52 @@ export default function Dashboard() {
     navigate('/auth');
   };
 
+  const handleTogglePublicAccess = async (nextValue: boolean) => {
+    if (!appSettingsId) {
+      toast({
+        title: 'Configuração indisponível',
+        description: 'Não foi possível identificar o registro de configurações no banco.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setPublicAccessEnabled(nextValue);
+    setPublicAccessUpdating(true);
+
+    const { error } = await supabase
+      .from(appSettingsTable)
+      .update({ public_access_enabled: nextValue })
+      .eq('id', appSettingsId);
+
+    setPublicAccessUpdating(false);
+
+    if (error) {
+      setPublicAccessEnabled(!nextValue);
+      if (isMissingAppSettingsTable(error.message)) {
+        setPublicAccessLoadError('Configurações indisponíveis no banco.');
+      }
+      toast({
+        title: 'Não foi possível atualizar',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({
+      title: nextValue ? 'Acesso público ativado' : 'Acesso público desativado',
+      description: nextValue ? 'Templates ficam visíveis sem login.' : 'Templates voltam a exigir login.',
+    });
+  };
+
   const handleCreateFromScratch = () => {
-    navigate('/templates/new');
+    setTemplateDialogMode('generate');
+    setShowTemplateDialog(true);
   };
 
   const handleCreateFromTemplate = () => {
+    setTemplateDialogMode('select');
     setShowTemplateDialog(true);
   };
 
@@ -94,16 +250,20 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/10">
-      {/* Header */}
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+    <div className="min-h-screen bg-background relative overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-24 left-1/2 h-80 w-[54rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -bottom-28 left-1/2 h-80 w-[54rem] -translate-x-1/2 rounded-full bg-accent/10 blur-3xl" />
+      </div>
+
+      <header className="border-b border-border/60 bg-background/70 backdrop-blur-xl sticky top-0 z-50 relative">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Logo size="md" />
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="gap-2 text-foreground">
-                <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
+              <Button variant="ghost" className="gap-2 text-foreground hover:bg-secondary/40">
+                <div className="h-8 w-8 rounded-full bg-secondary/60 flex items-center justify-center border border-border/60">
                   <User className="h-4 w-4 text-primary" />
                 </div>
                 <span className="hidden sm:inline text-sm">{user?.email}</span>
@@ -111,6 +271,32 @@ export default function Dashboard() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
+              {isAdmin && (
+                <>
+                  <DropdownMenuItem
+                    onSelect={(e) => e.preventDefault()}
+                    className="cursor-default justify-between gap-3"
+                    disabled={publicAccessLoading || publicAccessUpdating}
+                  >
+                    <div className="flex flex-col">
+                      <span>Acesso público</span>
+                      <span className="text-xs text-muted-foreground">
+                        {publicAccessLoadError
+                          ? 'Indisponível'
+                          : publicAccessEnabled
+                            ? 'Ativado'
+                            : 'Desativado'}
+                      </span>
+                    </div>
+                    <Switch
+                      checked={publicAccessEnabled}
+                      onCheckedChange={handleTogglePublicAccess}
+                      disabled={publicAccessLoading || publicAccessUpdating || Boolean(publicAccessLoadError)}
+                    />
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem onClick={handleSignOut} className="text-destructive cursor-pointer">
                 <LogOut className="h-4 w-4 mr-2" />
                 Sair
@@ -120,21 +306,19 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        {/* Title and Actions */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+      <main className="container mx-auto px-4 py-10 relative">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">Meus Templates</h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              Gerencie seus templates utilitários do WhatsApp
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">Meus Templates</h1>
+            <p className="text-muted-foreground text-sm sm:text-base mt-2">
+              Crie, edite e organize templates do WhatsApp com mais clareza.
             </p>
           </div>
           
           <div className="flex gap-3">
             <Button
               onClick={handleCreateFromScratch}
-              className="bg-gradient-to-r from-primary to-primary/80 hover:opacity-90 shadow-md gap-2"
+              className="bg-gradient-to-r from-primary to-accent hover:opacity-95 gap-2"
             >
               <Plus className="h-4 w-4" />
               Criar Template
@@ -142,7 +326,7 @@ export default function Dashboard() {
             <Button
               onClick={handleCreateFromTemplate}
               variant="outline"
-              className="border-primary/50 text-primary hover:bg-primary/10 gap-2"
+              className="border-primary/40 text-primary hover:bg-primary/10 gap-2"
               disabled={templates.length === 0}
             >
               <Copy className="h-4 w-4" />
@@ -151,7 +335,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Templates List */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -167,39 +350,36 @@ export default function Dashboard() {
             <p className="text-muted-foreground text-sm mb-6 max-w-md mx-auto">
               Comece criando seu primeiro template utilitário para a API do WhatsApp.
             </p>
-            <Button
-              onClick={handleCreateFromScratch}
-              className="bg-gradient-to-r from-primary to-accent hover:opacity-90"
-            >
+            <Button onClick={handleCreateFromScratch} className="bg-gradient-to-r from-primary to-accent hover:opacity-95">
               <Plus className="h-4 w-4 mr-2" />
               Criar Primeiro Template
             </Button>
           </GlassCard>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {templates.map((template) => (
               <GlassCard
                 key={template.id}
-                className="p-5 hover:border-primary/30 transition-colors cursor-pointer group"
+                className="p-5 hover:border-primary/40 hover:shadow-lg transition-colors cursor-pointer group"
                 onClick={() => navigate(`/templates/${template.id}`)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                    <div className="h-10 w-10 rounded-xl bg-secondary/60 border border-border/60 flex items-center justify-center group-hover:border-primary/30 transition-colors">
                       <FileText className="h-5 w-5 text-primary" />
                     </div>
                     <div>
-                      <h3 className="font-medium text-foreground group-hover:text-primary transition-colors">
+                      <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
                         {template.name}
                       </h3>
                       <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
-                        <span className="px-2 py-0.5 rounded-full bg-secondary/50 text-xs">
+                        <span className="px-2.5 py-1 rounded-full bg-secondary/60 border border-border/60 text-xs font-medium">
                           {template.category}
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="hidden md:flex items-center gap-2 text-sm text-muted-foreground">
                     <Calendar className="h-4 w-4" />
                     <span>
                       {format(new Date(template.updated_at), "dd 'de' MMM, yyyy", { locale: ptBR })}
@@ -216,8 +396,11 @@ export default function Dashboard() {
       <TemplateSelectionDialog
         open={showTemplateDialog}
         onOpenChange={setShowTemplateDialog}
+        mode={templateDialogMode}
         templates={templates}
         onSelect={handleSelectTemplate}
+        userId={user?.id}
+        onCreated={fetchTemplates}
       />
     </div>
   );

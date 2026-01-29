@@ -11,8 +11,8 @@ export function GlassCard({ children, className, glow = false, ...props }: Glass
   return (
     <div
       className={cn(
-        'rounded-xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-lg',
-        glow && 'shadow-[var(--glow-primary)]',
+        'rounded-2xl border border-border/60 bg-card/70 backdrop-blur-xl shadow-md',
+        glow && 'shadow-[var(--shadow-md),var(--glow-primary)]',
         className
       )}
       {...props}

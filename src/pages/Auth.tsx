@@ -15,14 +15,15 @@ const authSchema = z.object({
 });
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [canCreateAccount, setCanCreateAccount] = useState(false);
   
-  const { signIn, signUp, user } = useAuth();
+  const { signInWithPassword, signUpWithPassword, user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,7 +35,10 @@ export default function Auth() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     setFieldErrors({});
+    setCanCreateAccount(false);
+    const allowedEmail = 'admgestalt@gmail.com';
 
     const result = authSchema.safeParse({ email, password });
     if (!result.success) {
@@ -47,26 +51,21 @@ export default function Auth() {
       return;
     }
 
+    if (email.trim().toLowerCase() !== allowedEmail) {
+      setError('Este email não tem permissão de acesso.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      if (isLogin) {
-        const { error } = await signIn(email, password);
-        if (error) {
-          if (error.message.includes('Invalid login credentials')) {
-            setError('Credenciais inválidas. Verifique seu email e senha.');
-          } else {
-            setError(error.message);
-          }
-        }
-      } else {
-        const { error } = await signUp(email, password);
-        if (error) {
-          if (error.message.includes('User already registered')) {
-            setError('Este email já está cadastrado. Tente fazer login.');
-          } else {
-            setError(error.message);
-          }
+      const { error } = await signInWithPassword(email.trim(), password);
+      if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          setError('Credenciais inválidas. Verifique seu email e senha.');
+          setCanCreateAccount(true);
+        } else {
+          setError(error.message);
         }
       }
     } catch (err) {
@@ -76,19 +75,69 @@ export default function Auth() {
     }
   };
 
+  const handleCreateAccount = async () => {
+    setError(null);
+    setInfo(null);
+    setFieldErrors({});
+    const allowedEmail = 'admgestalt@gmail.com';
+
+    const result = authSchema.safeParse({ email, password });
+    if (!result.success) {
+      const errors: { email?: string; password?: string } = {};
+      result.error.errors.forEach((err) => {
+        if (err.path[0] === 'email') errors.email = err.message;
+        if (err.path[0] === 'password') errors.password = err.message;
+      });
+      setFieldErrors(errors);
+      return;
+    }
+
+    if (email.trim().toLowerCase() !== allowedEmail) {
+      setError('Este email não tem permissão de acesso.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error, session } = await signUpWithPassword(email.trim(), password);
+      if (error) {
+        const message = error.message ?? 'Não foi possível criar a conta.';
+        if (message.toLowerCase().includes('user already registered')) {
+          setError('Usuário já existe. Tente entrar com a senha correta.');
+        } else if (message.includes('SIGNUP_DISABLED') || message.toLowerCase().includes('signups')) {
+          setError('Criação de conta desabilitada no Supabase. Crie o usuário no painel (Auth → Users).');
+        } else {
+          setError(message);
+        }
+        return;
+      }
+
+      if (session) {
+        navigate('/dashboard');
+        return;
+      }
+
+      setInfo('Conta criada. Se o Supabase exigir confirmação de email, confirme e tente entrar.');
+      setCanCreateAccount(false);
+    } catch (err) {
+      setError('Ocorreu um erro ao criar a conta. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-secondary/20 relative overflow-hidden">
-      {/* Background effects */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-1/2 -left-1/2 w-full h-full bg-primary/5 rounded-full blur-3xl" />
-        <div className="absolute -bottom-1/2 -right-1/2 w-full h-full bg-accent/5 rounded-full blur-3xl" />
+    <div className="min-h-screen flex items-center justify-center p-4 bg-background relative overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-24 left-1/2 h-80 w-[44rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -bottom-28 left-1/2 h-80 w-[44rem] -translate-x-1/2 rounded-full bg-accent/10 blur-3xl" />
       </div>
 
-      <GlassCard className="w-full max-w-md p-8 relative z-10" glow>
-        <div className="flex flex-col items-center mb-8">
+      <GlassCard className="w-full max-w-md p-8 sm:p-10 relative z-10" glow>
+        <div className="flex flex-col items-center text-center mb-8">
           <Logo size="lg" />
-          <p className="text-muted-foreground mt-2 text-sm">
-            Gerencie seus templates do WhatsApp
+          <p className="text-muted-foreground mt-3 text-sm sm:text-base max-w-xs">
+            Gerencie seus templates do WhatsApp.
           </p>
         </div>
 
@@ -97,6 +146,13 @@ export default function Auth() {
             <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm">
               <AlertCircle className="h-4 w-4 flex-shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {info && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/30 text-foreground text-sm">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 text-primary" />
+              <span>{info}</span>
             </div>
           )}
 
@@ -110,7 +166,7 @@ export default function Auth() {
                 placeholder="seu@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="pl-10 bg-secondary/50 border-border/50 focus:border-primary"
+                className="pl-10"
                 disabled={loading}
               />
             </div>
@@ -129,7 +185,7 @@ export default function Auth() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="pl-10 bg-secondary/50 border-border/50 focus:border-primary"
+                className="pl-10"
                 disabled={loading}
               />
             </div>
@@ -140,36 +196,28 @@ export default function Auth() {
 
           <Button
             type="submit"
-            className="w-full h-11 bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity shadow-[var(--glow-primary)]"
+            className="w-full h-11 bg-gradient-to-r from-primary to-accent hover:opacity-95 shadow-[var(--glow-primary)]"
             disabled={loading}
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
-            ) : isLogin ? (
-              'Entrar'
             ) : (
-              'Criar Conta'
+              'Entrar'
             )}
           </Button>
-        </form>
 
-        <div className="mt-6 text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setIsLogin(!isLogin);
-              setError(null);
-              setFieldErrors({});
-            }}
-            className="text-sm text-muted-foreground hover:text-primary transition-colors"
-          >
-            {isLogin ? (
-              <>Não tem conta? <span className="text-primary font-medium">Cadastre-se</span></>
-            ) : (
-              <>Já tem conta? <span className="text-primary font-medium">Entrar</span></>
-            )}
-          </button>
-        </div>
+          {canCreateAccount && (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-11"
+              disabled={loading}
+              onClick={handleCreateAccount}
+            >
+              Criar conta
+            </Button>
+          )}
+        </form>
       </GlassCard>
     </div>
   );

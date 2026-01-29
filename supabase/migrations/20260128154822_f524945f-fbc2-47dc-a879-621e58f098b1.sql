@@ -1,5 +1,5 @@
 -- Create templates table for WhatsApp API utility templates
-CREATE TABLE public.templates (
+CREATE TABLE IF NOT EXISTS public.templates (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -15,21 +15,25 @@ CREATE TABLE public.templates (
 ALTER TABLE public.templates ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for user access
+DROP POLICY IF EXISTS "Users can view their own templates" ON public.templates;
 CREATE POLICY "Users can view their own templates" 
 ON public.templates 
 FOR SELECT 
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create their own templates" ON public.templates;
 CREATE POLICY "Users can create their own templates" 
 ON public.templates 
 FOR INSERT 
 WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own templates" ON public.templates;
 CREATE POLICY "Users can update their own templates" 
 ON public.templates 
 FOR UPDATE 
 USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own templates" ON public.templates;
 CREATE POLICY "Users can delete their own templates" 
 ON public.templates 
 FOR DELETE 
@@ -45,6 +49,7 @@ END;
 $$ LANGUAGE plpgsql SET search_path = public;
 
 -- Create trigger for automatic timestamp updates
+DROP TRIGGER IF EXISTS update_templates_updated_at ON public.templates;
 CREATE TRIGGER update_templates_updated_at
 BEFORE UPDATE ON public.templates
 FOR EACH ROW

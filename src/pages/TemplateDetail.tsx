@@ -70,7 +70,8 @@ export default function TemplateDetail() {
 
     if (error) {
       toast({
-        title: 'Template não encontrado',
+        title: error.code === '42501' ? 'Sem permissão' : 'Template não encontrado',
+        description: error.code === '42501' ? error.message : undefined,
         variant: 'destructive',
       });
       navigate('/dashboard');
@@ -105,7 +106,7 @@ export default function TemplateDetail() {
 
     if (error) {
       toast({
-        title: 'Erro ao salvar',
+        title: error.code === '42501' ? 'Sem permissão para salvar' : 'Erro ao salvar',
         description: error.message,
         variant: 'destructive',
       });
@@ -129,7 +130,7 @@ export default function TemplateDetail() {
 
     if (error) {
       toast({
-        title: 'Erro ao excluir',
+        title: error.code === '42501' ? 'Sem permissão para excluir' : 'Erro ao excluir',
         description: error.message,
         variant: 'destructive',
       });

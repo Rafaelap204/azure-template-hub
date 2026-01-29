@@ -70,6 +70,16 @@ export default function TemplateCreate() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!user) {
+      toast({
+        title: 'Sessão expirada',
+        description: 'Faça login novamente para continuar.',
+        variant: 'destructive',
+      });
+      navigate('/auth');
+      return;
+    }
+
     if (!name.trim()) {
       toast({
         title: 'Nome obrigatório',
@@ -85,7 +95,7 @@ export default function TemplateCreate() {
       name: name.trim(),
       category,
       content: content.trim() || null,
-      user_id: user?.id,
+      user_id: user.id,
       based_on_template_id: basedOnId,
     });
 
