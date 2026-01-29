@@ -14,27 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      app_settings: {
-        Row: {
-          id: string
-          public_access_enabled: boolean
-          singleton: boolean
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          public_access_enabled?: boolean
-          singleton?: boolean
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          public_access_enabled?: boolean
-          singleton?: boolean
-          updated_at?: string
-        }
-        Relationships: []
-      }
       templates: {
         Row: {
           based_on_template_id: string | null
