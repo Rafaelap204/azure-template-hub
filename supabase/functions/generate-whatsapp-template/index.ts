@@ -23,29 +23,16 @@ type GeneratedTemplate = {
   notes?: string[];
 };
 
-const buildCorsHeaders = (req: Request) => {
-  const origin = req.headers.get("origin") ?? "*";
-
-  const headers: Record<string, string> = {
-    "Access-Control-Allow-Headers":
-      req.headers.get("access-control-request-headers") ??
-      "authorization, x-client-info, apikey, content-type, x-supabase-authorization, x-requested-with",
-    "Access-Control-Allow-Methods": 
-      req.headers.get("access-control-request-method") ?? "GET, POST, OPTIONS",
-    "Access-Control-Max-Age": "86400",
-  };
-
-  headers["Access-Control-Allow-Origin"] = origin;
-  headers["Access-Control-Allow-Credentials"] = "true";
-  headers["Vary"] = "Origin";
-
-  return headers;
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-const jsonResponse = (status: number, body: unknown, headers: Record<string, string>) =>
+const jsonResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { ...headers, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
 const slugifyUnderscore = (value: string) =>
@@ -136,7 +123,7 @@ const validateAndFix = (input: Partial<GeneratedTemplate>, fallbackTitle: string
 };
 
 serve(async (req) => {
-  const corsHeaders = buildCorsHeaders(req);
+  console.log("[generate-whatsapp-template] Request received:", req.method, req.url);
 
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -145,33 +132,38 @@ serve(async (req) => {
   if (req.method === "GET") {
     const url = new URL(req.url);
     if (url.searchParams.get("health") === "1") {
-      return jsonResponse(200, { ok: true, name: "generate-whatsapp-template" }, corsHeaders);
+      console.log("[generate-whatsapp-template] Health check OK");
+      return jsonResponse(200, { ok: true, name: "generate-whatsapp-template" });
     }
-
-    return jsonResponse(200, { ok: true }, corsHeaders);
+    return jsonResponse(200, { ok: true });
   }
 
   if (req.method !== "POST") {
-    return jsonResponse(405, { error: "Method not allowed" }, corsHeaders);
+    return jsonResponse(405, { error: "Method not allowed" });
   }
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
-    const OPENROUTER_MODEL = Deno.env.get("OPENROUTER_MODEL") ?? "openai/gpt-4o-mini";
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
+
+    console.log("[generate-whatsapp-template] Checking env vars...");
+    console.log("[generate-whatsapp-template] SUPABASE_URL:", SUPABASE_URL ? "set" : "missing");
+    console.log("[generate-whatsapp-template] SUPABASE_ANON_KEY:", SUPABASE_ANON_KEY ? "set" : "missing");
+    console.log("[generate-whatsapp-template] LOVABLE_API_KEY:", LOVABLE_API_KEY ? "set" : "missing");
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      return jsonResponse(500, { error: "Supabase env vars ausentes (SUPABASE_URL/SUPABASE_ANON_KEY)." }, corsHeaders);
+      return jsonResponse(500, { error: "Supabase env vars ausentes." });
     }
 
-    if (!OPENROUTER_API_KEY) {
-      return jsonResponse(500, { error: "Secret OPENROUTER_API_KEY não configurada na Edge Function." }, corsHeaders);
+    if (!LOVABLE_API_KEY) {
+      return jsonResponse(500, { error: "Secret LOVABLE_API_KEY não configurada." });
     }
 
     const authHeader = req.headers.get("authorization") ?? "";
     if (!authHeader) {
-      return jsonResponse(401, { error: "Authorization ausente." }, corsHeaders);
+      console.log("[generate-whatsapp-template] No authorization header");
+      return jsonResponse(401, { error: "Authorization ausente." });
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -181,13 +173,11 @@ serve(async (req) => {
 
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user?.email) {
-      return jsonResponse(401, { error: "Sessão inválida." }, corsHeaders);
+      console.log("[generate-whatsapp-template] User auth failed:", userError?.message);
+      return jsonResponse(401, { error: "Sessão inválida." });
     }
 
-    const email = (userData.user.email ?? "").toLowerCase();
-    if (email !== "admgestalt@gmail.com") {
-      return jsonResponse(403, { error: "Sem permissão para gerar templates." }, corsHeaders);
-    }
+    console.log("[generate-whatsapp-template] User authenticated:", userData.user.email);
 
     const payload = await req.json().catch(() => null) as
       | {
@@ -204,8 +194,10 @@ serve(async (req) => {
     const messageType = (payload?.message_type === "vendas" ? "vendas" : "cobranca") as GeneratorMessageType;
     const language = coerceString(payload?.language).trim() || "pt_BR";
 
-    if (!title) return jsonResponse(400, { error: "Campo title é obrigatório." }, corsHeaders);
-    if (!prompt) return jsonResponse(400, { error: "Campo prompt é obrigatório." }, corsHeaders);
+    if (!title) return jsonResponse(400, { error: "Campo title é obrigatório." });
+    if (!prompt) return jsonResponse(400, { error: "Campo prompt é obrigatório." });
+
+    console.log("[generate-whatsapp-template] Generating template for:", title);
 
     const utilityDocSummary = `
 Regras essenciais de Utility Templates (WhatsApp Business):
@@ -294,17 +286,18 @@ Dados do pedido:
 - prompt do usuário: ${prompt}
 `.trim();
 
-    const openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    console.log("[generate-whatsapp-template] Calling Lovable AI...");
+
+    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model: "google/gemini-2.5-flash",
         temperature: 0.6,
         max_tokens: 900,
-        response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -312,30 +305,36 @@ Dados do pedido:
       }),
     });
 
-    if (!openRouterResponse.ok) {
-      const errText = await openRouterResponse.text().catch(() => "");
-      return jsonResponse(502, { error: "Falha ao chamar OpenRouter.", details: errText.slice(0, 1500) }, corsHeaders);
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text().catch(() => "");
+      console.log("[generate-whatsapp-template] AI error:", aiResponse.status, errText);
+      return jsonResponse(502, { error: "Falha ao chamar Lovable AI.", details: errText.slice(0, 1500) });
     }
 
-    type OpenRouterChatCompletion = {
+    type AIChatCompletion = {
       choices?: Array<{ message?: { content?: string } }>;
     };
 
-    const openRouterUnknown: unknown = await openRouterResponse.json();
-    const openRouterJson = asRecord(openRouterUnknown) as OpenRouterChatCompletion | null;
-    const content = coerceString(openRouterJson?.choices?.[0]?.message?.content);
+    const aiUnknown: unknown = await aiResponse.json();
+    const aiJson = asRecord(aiUnknown) as AIChatCompletion | null;
+    const content = coerceString(aiJson?.choices?.[0]?.message?.content);
+
+    console.log("[generate-whatsapp-template] AI response content length:", content.length);
 
     if (!content) {
-      return jsonResponse(502, { error: "OpenRouter retornou resposta vazia." }, corsHeaders);
+      return jsonResponse(502, { error: "Lovable AI retornou resposta vazia." });
     }
 
     const rawJson = pickJsonFromText(content);
     const parsed = JSON.parse(rawJson) as Partial<GeneratedTemplate>;
     const fixed = validateAndFix(parsed, title, messageType);
 
-    return jsonResponse(200, fixed, corsHeaders);
+    console.log("[generate-whatsapp-template] Template generated successfully:", fixed.whatsapp_template_name);
+
+    return jsonResponse(200, fixed);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erro desconhecido";
-    return jsonResponse(500, { error: message }, corsHeaders);
+    console.log("[generate-whatsapp-template] Error:", message);
+    return jsonResponse(500, { error: message });
   }
 });
